@@ -1,0 +1,83 @@
+name: Deploy Firebase Functions
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Choose what to deploy
+        required: true
+        default: titles
+        type: choice
+        options:
+          - titles
+          - updateTitleDefinition
+          - seedInitialTitles
+          - all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebase-functions-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FIREBASE_PROJECT_ID: bxh-arena
+      FUNCTIONS_DISCOVERY_TIMEOUT: 60000
+      FIREBASE_SERVICE_ACCOUNT_BXH_ARENA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_BXH_ARENA }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Unpack Functions source bundle
+        shell: bash
+        run: |
+          test -f functions-source.zip || { echo "functions-source.zip not found" >&2; exit 1; }
+          rm -rf functions
+          mkdir functions
+          unzip -q functions-source.zip -d functions
+          if [ ! -f functions/package.json ] && [ -d functions/functions ]; then
+            shopt -s dotglob
+            mv functions/functions/* functions/
+            rmdir functions/functions
+          fi
+          test -f functions/package.json || { echo "functions/package.json not found after unzip" >&2; exit 1; }
+          test -f functions/index.js || { echo "functions/index.js not found after unzip" >&2; exit 1; }
+
+      - name: Install function dependencies
+        run: npm ci --prefix functions
+
+      - name: Validate function source
+        run: npm --prefix functions run check
+
+      - name: Prepare Firebase credentials
+        shell: bash
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT_BXH_ARENA" ]; then
+            echo "Missing GitHub secret: FIREBASE_SERVICE_ACCOUNT_BXH_ARENA" >&2
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_BXH_ARENA" > "$RUNNER_TEMP/firebase-service-account.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-service-account.json" >> "$GITHUB_ENV"
+
+      - name: Deploy selected Firebase Functions
+        shell: bash
+        run: |
+          case "${{ inputs.target }}" in
+            titles) ONLY="functions:updateTitleDefinition,functions:seedInitialTitles" ;;
+            updateTitleDefinition) ONLY="functions:updateTitleDefinition" ;;
+            seedInitialTitles) ONLY="functions:seedInitialTitles" ;;
+            all) ONLY="functions" ;;
+            *) echo "Unsupported deploy target" >&2; exit 1 ;;
+          esac
+          npx --yes firebase-tools@15.30.0 deploy --project "$FIREBASE_PROJECT_ID" --only "$ONLY" --non-interactive
