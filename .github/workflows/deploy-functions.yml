@@ -1,3 +1,4 @@
+# BXH ARENA Firebase Functions deployment workflow
 name: Deploy Firebase Functions
 
 on:
