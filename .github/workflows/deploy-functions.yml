@@ -16,6 +16,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: firebase-functions-deploy
@@ -28,11 +29,18 @@ jobs:
     env:
       FIREBASE_PROJECT_ID: bxh-arena
       FUNCTIONS_DISCOVERY_TIMEOUT: 60000
-      FIREBASE_SERVICE_ACCOUNT_BXH_ARENA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_BXH_ARENA }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud with OIDC
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/87261141693/locations/global/workloadIdentityPools/bxh-github-actions/providers/bxh-github
+          service_account: bxh-github-deploy@bxh-arena.iam.gserviceaccount.com
+          create_credentials_file: true
+          export_environment_variables: true
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
@@ -59,16 +67,6 @@ jobs:
 
       - name: Validate function source
         run: npm --prefix functions run check
-
-      - name: Prepare Firebase credentials
-        shell: bash
-        run: |
-          if [ -z "$FIREBASE_SERVICE_ACCOUNT_BXH_ARENA" ]; then
-            echo "Missing GitHub secret: FIREBASE_SERVICE_ACCOUNT_BXH_ARENA" >&2
-            exit 1
-          fi
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_BXH_ARENA" > "$RUNNER_TEMP/firebase-service-account.json"
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-service-account.json" >> "$GITHUB_ENV"
 
       - name: Deploy selected Firebase Functions
         shell: bash
