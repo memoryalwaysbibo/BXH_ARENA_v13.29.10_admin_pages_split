@@ -1,0 +1,11 @@
+name: BXH Functions Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm custom Actions workflow
+        run: echo "BXH custom GitHub Actions workflow works."
