@@ -1,0 +1,43 @@
+name: Patch BXH ARENA v13.29.12 rarity
+
+on:
+  push:
+    paths:
+      - .github/workflows/patch-v13.29.12-rarity.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Patch ladder title rarity rendering
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+          old = '''${p.equippedBadge?`<span class="badge badge-metal" style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle" title="${esc(p.equippedBadge.name)}">${esc(p.equippedBadge.name)}</span>`:""}'''
+          new = '''${p.equippedBadge?`<span class="title-chip rarity-${esc(p.equippedBadge.rarity||'common')}" style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle" title="${esc(p.equippedBadge.name)}">${esc(p.equippedBadge.name)}</span>`:""}'''
+          if old not in s:
+              raise SystemExit('expected ladder title markup not found')
+          s = s.replace(old, new, 1)
+          if "p.title.rarity||'common'" not in s:
+              raise SystemExit('player card rarity renderer missing')
+          p.write_text(s, encoding='utf-8')
+          Path('BXH_ARENA_v13.29.12.html').write_text(s, encoding='utf-8')
+          print('v13.29.12 front-end rarity patch ready')
+
+      - name: Commit front-end patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html BXH_ARENA_v13.29.12.html
+          git diff --cached --quiet && { echo "No changes"; exit 1; }
+          git commit -m "v13.29.12: render title rarity on ladder"
+          git push
