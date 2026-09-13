@@ -1,0 +1,90 @@
+name: Patch BXH ARENA v13.29.11
+
+on:
+  push:
+    paths:
+      - '.github/workflows/patch-v13.29.11.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch title UX and rarity-aware player cards
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          paths = [
+              Path('index.html'),
+              Path('BXH_ARENA_v13.29.10_titles_rarity_eternal.html'),
+          ]
+
+          for p in paths:
+              s = p.read_text(encoding='utf-8')
+
+              old = 'return `<details class="account-tools-card"><summary><span>新增／編輯稱號與開拓者發放</span></summary><div class="account-tools-body">'
+              new = 'return `<details class="account-tools-card" ${c.busy||c.message?\'open\':\'\'}><summary><span>新增／編輯稱號與開拓者發放</span></summary><div class="account-tools-body">'
+              assert old in s, f'{p}: title editor details pattern not found'
+              s = s.replace(old, new, 1)
+
+              old = " if(action==='title-editor-delete'&&!confirm('確定刪除此稱號？已有發放紀錄會改為停用封存，保留玩家歷史。'))return;"
+              new = " if(action==='title-editor-save'&&!confirm(`確定要儲存稱號「${c.draft.name||'未命名稱號'}」的設定嗎？`))return;\n if(action==='title-editor-delete'&&!confirm('確定刪除此稱號？已有發放紀錄會改為停用封存，保留玩家歷史。'))return;"
+              assert old in s, f'{p}: title save confirmation insertion point not found'
+              s = s.replace(old, new, 1)
+
+              old = "   c.message='稱號已儲存。人工授予型稱號請至下方指定 UID 發放。';"
+              new = "   c.message='稱號已儲存。人工授予型稱號請至下方指定 UID 發放。';\n   showToast(`稱號「${payload.name||saved.titleId||'未命名稱號'}」已儲存`);"
+              assert old in s, f'{p}: title save success message not found'
+              s = s.replace(old, new, 1)
+
+              old = " }catch(e){if(uid===currentAuthUid())c.message=managedFeatureError(e);}"
+              new = " }catch(e){if(uid===currentAuthUid()){c.message=managedFeatureError(e);showToast(c.message,true);}}"
+              assert old in s, f'{p}: title save error handler not found'
+              s = s.replace(old, new, 1)
+
+              old = '${p.title?`<p class="badge badge-metal">${esc(p.title.name)}</p>`:\'\'}'
+              new = '${p.title?`<p class="title-chip rarity-${esc(p.title.rarity||\'common\')}">${esc(p.title.name)}</p>`:\'\'}'
+              assert old in s, f'{p}: player card title badge not found'
+              s = s.replace(old, new, 1)
+
+              old = '${p.title?` <span class="badge badge-metal">${esc(p.title.name)}</span>`:\'\'}'
+              new = '${p.title?` <span class="title-chip rarity-${esc(p.title.rarity||\'common\')}">${esc(p.title.name)}</span>`:\'\'}'
+              assert old in s, f'{p}: player search title badge not found'
+              s = s.replace(old, new, 1)
+
+              marker = '<!-- v13.29.11: title editor feedback + rarity-aware player cards -->\n'
+              if marker not in s:
+                  s = s.replace('<!DOCTYPE html>', '<!DOCTYPE html>\n' + marker, 1)
+
+              p.write_text(s, encoding='utf-8')
+
+          shutil.copy2('index.html', 'BXH_ARENA_v13.29.11.html')
+          PY
+
+      - name: Verify patch
+        shell: bash
+        run: |
+          grep -q 'v13.29.11: title editor feedback' index.html
+          grep -q '確定要儲存稱號' index.html
+          grep -q 'title-chip rarity-' index.html
+          git diff --check
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html BXH_ARENA_v13.29.10_titles_rarity_eternal.html BXH_ARENA_v13.29.11.html
+          git commit -m 'v13.29.11: title feedback and rarity-aware player cards'
+          git push origin HEAD:main
